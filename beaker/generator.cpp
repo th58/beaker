@@ -157,21 +157,34 @@ Generator::gen(Add_expr const* e)
 llvm::Value* 
 Generator::gen(Sub_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+	//TODO: find the command to generate a subtract;
+	llvm::Value* l = gen(e->left());
+	llvm::Value* r = gen(e->right());
+	return build.CreateSub(l, r);
+  //throw std::runtime_error("not implemented");
 }
 
 
 llvm::Value* 
 Generator::gen(Mul_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+	//TODO: find the command to generate a multiply
+	llvm::Value* l = gen(e->left());
+	llvm::Value* r = gen(e->right());
+	return build.CreateMul(l, r);
+  //throw std::runtime_error("not implemented");
 }
 
 
 llvm::Value* 
 Generator::gen(Div_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+	//TODO: Find the command to generate a multiply
+	llvm::Value* l = gen(e->left());
+	llvm::Value* r = gen(e->right());
+	return build.CreateSDiv(l, r);
+
+  //throw std::runtime_error("not implemented");
 }
 
 

@@ -263,40 +263,37 @@ Generator::gen(Add_expr const* e)
 llvm::Value*
 Generator::gen(Sub_expr const* e)
 {
-	//TODO: find the command to generate a subtract;
-	llvm::Value* l = gen(e->left());
-	llvm::Value* r = gen(e->right());
-	return build.CreateSub(l, r);
-  //throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateSub(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Mul_expr const* e)
 {
-	//TODO: find the command to generate a multiply
-	llvm::Value* l = gen(e->left());
-	llvm::Value* r = gen(e->right());
-	return build.CreateMul(l, r);
-  //throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateMul(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Div_expr const* e)
 {
-	//TODO: Find the command to generate a multiply
-	llvm::Value* l = gen(e->left());
-	llvm::Value* r = gen(e->right());
-	return build.CreateSDiv(l, r);
-
-  //throw std::runtime_error("not implemented");
+  //TODO: Find the command to generate a multiply
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateSDiv(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Rem_expr const* e)
 {
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateSRem(l, r);
   throw std::runtime_error("not implemented");
 }
 
@@ -304,14 +301,18 @@ Generator::gen(Rem_expr const* e)
 llvm::Value*
 Generator::gen(Neg_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  //NOTE: There should be a better way to do this.
+  llvm::Value* l = gen(e);
+  llvm::Value* r = gen(-1);
+  return build.CreateMul(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Pos_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* val = gen(e);
+  return build.Createi32(val);
 }
 
 
@@ -504,7 +505,7 @@ Generator::gen(Stmt const* s)
 void
 Generator::gen(Empty_stmt const* s)
 {
-  throw std::runtime_error("not implemented");
+  
 }
 
 

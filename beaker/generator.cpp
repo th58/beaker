@@ -397,7 +397,8 @@ Generator::gen(Or_expr const* e)
 llvm::Value*
 Generator::gen(Not_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* v = gen(e);
+  return build.CreateNot(v);
 }
 
 

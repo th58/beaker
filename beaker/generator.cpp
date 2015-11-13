@@ -303,7 +303,6 @@ Generator::gen(Rem_expr const* e)
   llvm::Value* l = gen(e->left());
   llvm::Value* r = gen(e->right());
   return build.CreateSRem(l, r);
-  throw std::runtime_error("not implemented");
 }
 
 
@@ -311,17 +310,18 @@ llvm::Value*
 Generator::gen(Neg_expr const* e)
 {
   //NOTE: There should be a better way to do this.
-  llvm::Value* l = gen(e);
-  llvm::Value* r = gen(-1);
-  return build.CreateMul(l, r);
+  //llvm::Value* l = gen(e);
+  //llvm::Value* r = gen(-1);
+  //return build.CreateMul(l, r);
+  throw std::runtime_error("not implemented");
 }
 
 
 llvm::Value*
 Generator::gen(Pos_expr const* e)
 {
-  llvm::Value* val = gen(e);
-  return build.Createi32(val);
+  Value v = evaluate(e);
+  return build.getInt32(v.get_integer());
 }
 
 

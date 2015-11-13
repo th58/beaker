@@ -5,7 +5,8 @@
 #define BEAKER_SYMBOL_HPP
 
 #include "string.hpp"
-#include "cast.hpp"
+
+#include "lingo/node.hpp"
 
 #include <unordered_map>
 #include <typeinfo>
@@ -24,12 +25,14 @@ class Symbol
   friend struct Symbol_table;
 
 public:
-  Symbol(int);
+  Symbol(int k)
+    : str_(nullptr), tok_(k)
+  { }
 
   virtual ~Symbol() { }
 
-  String const& spelling() const;
-  int           token() const;
+  String const& spelling() const { return *str_; }
+  int           token() const    { return tok_; }
 
 private:
   String const* str_; // The textual representation
@@ -37,27 +40,15 @@ private:
 };
 
 
-inline
-Symbol::Symbol(int k)
-  : str_(nullptr), tok_(k)
-{ }
-
-
-// Returns the spelling of the symbol.
-inline String const& 
-Symbol::spelling() const
+// Represents all identifiers.
+//
+// TODO: Track the innermost binding of the identifier?
+struct Identifier_sym : Symbol
 {
-  return *str_;
-}
-
-
-// Returns the kind of token classfication of 
-// the symbol.
-inline int 
-Symbol::token() const 
-{ 
-  return tok_; 
-}
+  Identifier_sym(int k)
+    : Symbol(k)
+  { }
+};
 
 
 // Represents the integer symbols true and false.
@@ -75,7 +66,7 @@ struct Boolean_sym : Symbol
 
 // Represents all integer symbols.
 //
-// TODO: Develop and use a good arbitrary precision 
+// TODO: Develop and use a good arbitrary precision
 // integer for this representation.
 //
 // TOOD: Track the integer base? Technically, that
@@ -88,19 +79,48 @@ struct Integer_sym : Symbol
   { }
 
   int value() const { return value_; }
-  
+
   int value_;
 };
 
 
-// Represents all identifiers.
+// Character symbols are represented by their integer
+// encoding in the execution character set. That
+// defaults to extended ASCII. Note that this internall
+// represnted as a system integer for simplicity.
 //
-// TODO: Track the innermost binding of the identifier?
-struct Identifier_sym : Symbol
+// TODO: Support wide character encoding in ISO 10646
+// (Unicode).
+//
+// TODO: Support configuration of the execution character
+// set.
+struct Character_sym : Symbol
 {
-  Identifier_sym(int k)
-    : Symbol(k)
+  Character_sym(int k, int n)
+    : Symbol(k), value_(n)
   { }
+
+  int value() const { return value_; }
+
+  int value_;
+};
+
+
+// A string symbol contains the representation of the
+// string literal in the execution character set.
+//
+// TODO: Supporting wide string literals would effectively
+// require this to be a union of narrow and wide string
+// representations.
+struct String_sym : Symbol
+{
+  String_sym(int k, String const& s)
+    : Symbol(k), value_(s)
+  { }
+
+  String const& value() const { return value_; }
+
+  String value_;
 };
 
 
@@ -121,7 +141,7 @@ struct Symbol_table : std::unordered_map<std::string, Symbol*>
 
   template<typename T, typename... Args>
   Symbol* put(String const&, Args&&...);
-  
+
   template<typename T, typename... Args>
   Symbol* put(char const*, char const*, Args&&...);
 
@@ -161,16 +181,17 @@ Symbol_table::put(String const& s, Args&&... args)
 {
   auto x = emplace(s, nullptr);
   auto iter = x.first;
+  Symbol*& sym = iter->second;
   if (x.second) {
     // Insertion succeeded, so create a new symbol
     // and bind its string representation.
-    iter->second = new T(std::forward<Args>(args)...);
-    iter->second->str_ = &iter->first;
+    sym = new T(std::forward<Args>(args)...);
+    sym->str_ = &iter->first;
   } else {
     // Insertion did not succeed. Check that we have
     // not redefined the symbol kind.
-    if(typeid(T) != typeid(*iter->second))
-      throw std::runtime_error("lexical symbol redefinition");
+    if (typeid(T) != typeid(*sym))
+      throw std::runtime_error("redefinition of symbol");
   }
   return iter->second;
 
@@ -214,4 +235,3 @@ Symbol_table::get(char const* s) const
 
 
 #endif
-

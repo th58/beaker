@@ -309,11 +309,8 @@ Generator::gen(Rem_expr const* e)
 llvm::Value*
 Generator::gen(Neg_expr const* e)
 {
-  //NOTE: There should be a better way to do this.
-  //llvm::Value* l = gen(e);
-  //llvm::Value* r = gen(-1);
-  //return build.CreateMul(l, r);
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e);
+  return build.CreateNeg(l);
 }
 
 
@@ -328,56 +325,72 @@ Generator::gen(Pos_expr const* e)
 llvm::Value*
 Generator::gen(Eq_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateICmpEQ(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Ne_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateICmpNE(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Lt_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateICmpSLT(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Gt_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateICmpSGT(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Le_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateICmpSLE(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Ge_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateICmpSGE(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(And_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateAnd(l, r);
 }
 
 
 llvm::Value*
 Generator::gen(Or_expr const* e)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* l = gen(e->left());
+  llvm::Value* r = gen(e->right());
+  return build.CreateOr(l, r);
 }
 
 

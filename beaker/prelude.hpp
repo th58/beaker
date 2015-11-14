@@ -8,6 +8,7 @@
 #include "lingo/string.hpp"
 #include "lingo/node.hpp"
 #include "lingo/print.hpp"
+#include "lingo/io.hpp"
 
 #include <iosfwd>
 #include <vector>
@@ -73,6 +74,7 @@ struct Function_decl;
 struct Parameter_decl;
 struct Record_decl;
 struct Field_decl;
+struct Method_decl;
 struct Module_decl;
 
 struct Stmt;

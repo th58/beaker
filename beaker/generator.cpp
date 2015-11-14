@@ -28,13 +28,23 @@
 //
 // NOTE: Currently, these are the same. However, these
 // differ be as Beaker evolves.
+//
+// TODO: Factor name mangling into a separate module.
+// This is going to get big.
 String
 Generator::get_name(Decl const* d)
 {
   if (d->is_foreign())
     return d->name()->spelling();
-  else
-    return d->name()->spelling();
+
+  // Generate the beaker encoding of the symbol.
+  if (is<Method_decl>(d)) {
+    // TODO: Itanium ABI?
+    std::stringstream ss;
+    ss << *d->context()->name() << '_' << *d->name();
+    return ss.str();
+  }
+  return d->name()->spelling();
 }
 
 
@@ -147,11 +157,21 @@ Generator::get_type(Reference_type const* t)
 
 
 // Return the structure type corresponding to the
-// declaration of t.
+// declaration of t. If, for some reason, we encounter
+// the type before its declaration, just emit the
+// definition now.
 llvm::Type*
 Generator::get_type(Record_type const* t)
 {
-  return types.lookup(t->declaration())->second;
+  auto const* bind = types.lookup(t->declaration());
+  if (!bind) {
+    // Note that we have to do a 2nd lookup because
+    // we don't return anything from generating
+    // declarations.
+    gen(t->declaration());
+    bind = types.lookup(t->declaration());
+  }
+  return bind->second;
 }
 
 
@@ -405,10 +425,20 @@ Generator::gen(Not_expr const* e)
 llvm::Value*
 Generator::gen(Call_expr const* e)
 {
-  llvm::Value* fn = gen(e->target());
+  // Generate arguments first.
   std::vector<llvm::Value*> args;
   for (Expr const* a : e->arguments())
     args.push_back(gen(a));
+
+  // If this is actually a method call, then we
+  // need to adjust the arguments.
+  llvm::Value* fn;
+  if (Member_expr* mem = as<Member_expr>(e->target())) {
+    fn = gen(mem->member());
+  } else {
+    fn = gen(e->target());
+  }
+
   return build.CreateCall(fn, args);
 }
 
@@ -421,6 +451,16 @@ llvm::Value*
 Generator::gen(Member_expr const* e)
 {
   llvm::Value* obj = gen(e->scope());
+
+  // If the member is a method, then just generate
+  // the code to produce the object. We'll use
+  // this as the argument in a function call.
+  //
+  // FIXME: I would prefer not to do this...
+  Id_expr* mem = cast<Id_expr>(e->member());
+  if (is<Method_decl>(mem->declaration()))
+    return obj;
+
   std::vector<llvm::Value*> args {
     build.getInt32(0),            // 0th element from base
     build.getInt32(e->position()) // nth element in struct
@@ -687,6 +727,7 @@ Generator::gen(Decl const* d)
     void operator()(Parameter_decl const* d) { return g.gen(d); }
     void operator()(Record_decl const* d) { return g.gen(d); }
     void operator()(Field_decl const* d) { return g.gen(d); }
+    void operator()(Method_decl const* d) { return g.gen(d); }
     void operator()(Module_decl const* d) { return g.gen(d); }
   };
   return apply(d, Fn{*this});
@@ -709,7 +750,7 @@ Generator::gen_local(Variable_decl const* d)
 
   // Generate the initializer.
   llvm::Value* init = gen(d->init());
-  
+
   // Store the result in the object.
   build.CreateStore(init, ptr);
 }
@@ -734,7 +775,7 @@ Generator::gen_global(Variable_decl const* d)
     // llvm::Value* val = gen(d->init());
     // if (llvm::Constant* c = llvm::dyn_cast<llvm::Constant>(val)) {
     //   init = c;
-    // } 
+    // }
   }
 
 
@@ -859,13 +900,23 @@ Generator::gen(Parameter_decl const* d)
 void
 Generator::gen(Record_decl const* d)
 {
+  // If we've already created a type, don't do
+  // anything else.
+  if (types.lookup(d))
+    return;
+
   // If the record is empty, generate a struct
   // with exactly one byte so that we never have
   // a type with 0 size.
+  //
+  // FIXME: This isn't right because we are currently
+  // mixing methods and fields in the same thing.
+  // They need to be separate.
   std::vector<llvm::Type*> ts;
   if (d->fields().empty()) {
     ts.push_back(build.getInt8Ty());
   } else {
+    // Construct the type over only the fields.
     for (Decl const* f : d->fields())
       ts.push_back(get_type(f->type()));
   }
@@ -874,6 +925,10 @@ Generator::gen(Record_decl const* d)
   // but if it's not used, then it won't be generated.
   llvm::Type* t = llvm::StructType::create(cxt, ts, d->name()->spelling());
   types.bind(d, t);
+
+  // Now, generate code for all other members.
+  for (Decl const* d : d->members())
+    gen(d);
 }
 
 
@@ -881,6 +936,16 @@ void
 Generator::gen(Field_decl const* d)
 {
   // NOTE: We should never actually get here.
+}
+
+
+
+// Just call out to the function generator. Name
+// mangling is handled in get_name().
+void
+Generator::gen(Method_decl const* d)
+{
+  gen(cast<Function_decl>(d));
 }
 
 

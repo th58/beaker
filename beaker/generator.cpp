@@ -720,6 +720,7 @@ Generator::gen(If_else_stmt const* s)
 void
 Generator::gen(While_stmt const* s)
 {
+  
   throw std::runtime_error("not implemented");
 }
 

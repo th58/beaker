@@ -574,11 +574,46 @@ Generator::gen(Return_stmt const* s)
   build.CreateRet(v);
 }
 
-
+//For these instructions I need to use a llvm::BasicBLock*
 void
 Generator::gen(If_then_stmt const* s)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value* cond_value = gen(s->condition());
+  if(!cond_value)
+    return;
+  
+  cond_value = build.CreateFCmpONE(cond_value,
+			     llvm::ConstantFP::get(llvm::getGlobalContext(), 
+						   llvm::APFloat(0.0)),
+			       "ifcond");
+
+  llvm::Function* then_function = build.GetInsertBlock()->getParent();
+
+  llvm::BasicBlock* then_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
+							  "then",
+							  then_function);
+  llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
+							   "ifcont");
+
+  build.SetInsertPoint(then_block);
+
+  //gives error when using the body() function
+  llvm::Value* then_value;// = gen(s->body());
+  if(!then_value)
+    return;
+
+  build.CreateBr(merge_block);
+
+  then_block = build.GetInsertBlock();
+
+  then_function->getBasicBlockList().push_back(merge_block);
+  build.SetInsertPoint(merge_block);
+
+  llvm::PHINode* pn = build.CreatePHI(llvm::Type::getDoubleTy(llvm::getGlobalContext()), 2, "iftmp");
+
+  pn->addIncoming(then_value, then_block);
+			      
+  //throw std::runtime_error("not implemented");
 }
 
 

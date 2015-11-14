@@ -157,12 +157,17 @@ struct Record_decl : Decl
 
 
 // A member variable of a record.
+//
+// TODO: Cache the field index?
 struct Field_decl : Decl
 {
   using Decl::Decl;
 
   void accept(Visitor& v) const { v.visit(this); }
   void accept(Mutator& v)       { v.visit(this); }
+
+  Record_decl const* context() const;
+  int                index() const;
 };
 
 
@@ -222,7 +227,7 @@ is_local_variable(Variable_decl const* v)
 // Returns true if the declaration defines an object.
 // Only variables, parameters, and fields define objects.
 inline bool
-defines_object(Decl const* d)
+is_object(Decl const* d)
 {
   return is<Variable_decl>(d)
       || is<Parameter_decl>(d)

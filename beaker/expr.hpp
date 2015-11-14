@@ -45,6 +45,7 @@ struct Expr::Visitor
 {
   virtual void visit(Literal_expr const*) = 0;
   virtual void visit(Id_expr const*) = 0;
+  virtual void visit(Decl_expr const*) = 0;
   virtual void visit(Add_expr const*) = 0;
   virtual void visit(Sub_expr const*) = 0;
   virtual void visit(Mul_expr const*) = 0;
@@ -62,7 +63,9 @@ struct Expr::Visitor
   virtual void visit(Or_expr const*) = 0;
   virtual void visit(Not_expr const*) = 0;
   virtual void visit(Call_expr const*) = 0;
-  virtual void visit(Member_expr const*) = 0;
+  virtual void visit(Dot_expr const*) = 0;
+  virtual void visit(Field_expr const*) = 0;
+  virtual void visit(Method_expr const*) = 0;
   virtual void visit(Index_expr const*) = 0;
   virtual void visit(Value_conv const*) = 0;
   virtual void visit(Block_conv const*) = 0;
@@ -78,6 +81,7 @@ struct Expr::Mutator
 {
   virtual void visit(Literal_expr*) = 0;
   virtual void visit(Id_expr*) = 0;
+  virtual void visit(Decl_expr*) = 0;
   virtual void visit(Add_expr*) = 0;
   virtual void visit(Sub_expr*) = 0;
   virtual void visit(Mul_expr*) = 0;
@@ -95,7 +99,9 @@ struct Expr::Mutator
   virtual void visit(Or_expr*) = 0;
   virtual void visit(Not_expr*) = 0;
   virtual void visit(Call_expr*) = 0;
-  virtual void visit(Member_expr*) = 0;
+  virtual void visit(Dot_expr*) = 0;
+  virtual void visit(Field_expr*) = 0;
+  virtual void visit(Method_expr*) = 0;
   virtual void visit(Index_expr*) = 0;
   virtual void visit(Value_conv*) = 0;
   virtual void visit(Block_conv*) = 0;
@@ -105,12 +111,9 @@ struct Expr::Mutator
 };
 
 
-// A boolean or integer literal value. The kind
-// of literal is determined by the underlying symbol.
-//
-// TODO: Can we ever have a function literal? That
-// would basically be an unnamed function object
-// since functions can only ever be named.
+// A literal or compile time value. Note that the
+// type of the literal must be known at the time
+// of object creation. It cannot be deduced.
 struct Literal_expr : Expr
 {
   Literal_expr(Type const* t, Value const& v)
@@ -126,14 +129,16 @@ struct Literal_expr : Expr
 };
 
 
-// An identifier that refers to a declaration.
-//
-// The declaration, like the expression's type, is
-// dsetermine during elaboration.
+// An identifier that refers to a declaration. This
+// is an unresolved expression.
 struct Id_expr : Expr
 {
   Id_expr(Symbol const* s)
     : sym(s)
+  { }
+
+  Id_expr(Type const* t, Symbol const* s)
+    : Expr(t), sym(s)
   { }
 
   void accept(Visitor& v) const { v.visit(this); }
@@ -142,11 +147,23 @@ struct Id_expr : Expr
   Symbol const* symbol() const   { return sym; }
   String const& spelling() const { return sym->spelling(); }
 
-  Decl const*   declaration() const        { return decl; }
-  void          declaration(Decl const* d) { decl = d; }
-
   Symbol const* sym;
-  Decl const*   decl;
+};
+
+
+// A reference to a declaration. These are produced
+// by the elaboration of id expressions.
+struct Decl_expr : Id_expr
+{
+  Decl_expr(Type const*, Decl*);
+
+  void accept(Visitor& v) const { v.visit(this); }
+  void accept(Mutator& v)       { v.visit(this); }
+
+  Symbol const* name() const;
+  Decl*         declaration() const { return decl; }
+
+  Decl* decl;
 };
 
 
@@ -338,7 +355,12 @@ struct Not_expr : Unary_expr
 };
 
 
-// The expression e(e1, e2, ..., en)
+// The expression e(e1, e2, ..., en).
+//
+// TODO: When we resolve this, the target is generally
+// resolved to a declaration. Should we subclass this
+// to provide resolution hints? Note that we guarantee
+// that the target is a decl-expr referring to a function.
 struct Call_expr : Expr
 {
   Call_expr(Expr* f, Expr_seq const& a)
@@ -357,28 +379,75 @@ struct Call_expr : Expr
 };
 
 
-// The expression e1.e2 where e1 has record type.
+// The expression e1.e2. This is an unresolved
+// expression.
 //
-// We cache the position of the resolved member
-// within its enclosing scope. This means we don't
-// have to re-compute it during evaluation or
-// codegen later on.
-struct Member_expr : Expr
+// The type of the expression is always that of e2.
+struct Dot_expr : Expr
 {
-  Member_expr(Expr* e1, Expr* e2)
-    : pos_(-1), first(e1), second(e2)
+  Dot_expr(Expr* e1, Expr* e2)
+    : Expr(e2->type()), first(e1), second(e2)
   { }
 
   void accept(Visitor& v) const { v.visit(this); }
   void accept(Mutator& v)       { v.visit(this); }
 
-  int   position() const { return pos_; }
-  Expr* scope() const    { return first; }
-  Expr* member() const   { return second; }
+  Expr* container() const { return first; }
+  Expr* member() const    { return second; }
 
-  int   pos_;
   Expr* first;
   Expr* second;
+};
+
+
+// An expression of the form e.f where e has record
+// type and f is a field of that type.
+//
+// TODO: When we add inheritance, the "field" member
+// will become a "path": a vector of offsets into
+// nested based types. For example:
+//
+//    struct B { x : int; }
+//    struct D : B { y : int; }
+//
+//    var d : D;
+//    var n : int = d.x; // Refers to d.0.0
+//
+// Of course, this assumes that we treat base class
+// objects as complete sub-objects and don't just
+// inherit members.
+struct Field_expr : Dot_expr
+{
+  Field_expr(Expr* e1, Expr* e2, Decl* v)
+    : Dot_expr(e1, e2), var(v)
+  { }
+
+  void accept(Visitor& v) const { v.visit(this); }
+  void accept(Mutator& v)       { v.visit(this); }
+
+  Record_decl* record() const;
+  Field_decl*  field() const;
+  int          index() const;
+
+  Decl* var;
+};
+
+
+// An expression of the form e.m where m is
+// a method in the type of e.
+struct Method_expr : Dot_expr
+{
+  Method_expr(Expr* e1, Expr* e2, Decl* d)
+    : Dot_expr(e1, e2), fn(d)
+  { }
+
+  void accept(Visitor& v) const { v.visit(this); }
+  void accept(Mutator& v)       { v.visit(this); }
+
+  Record_decl* record() const;
+  Method_decl* method() const;
+
+  Decl* fn;
 };
 
 
@@ -452,10 +521,10 @@ struct Block_conv : Conv
 // elaboration.
 //
 // FIXME: An initializer is a syntactic placeholder for
-// a constructor that is evaluated on uninitialized memory. 
+// a constructor that is evaluated on uninitialized memory.
 // This means that during elaboration. For example,
 // default initalization for an POD aggregate should
-// select a memset intrinsic. 
+// select a memset intrinsic.
 //
 // TODO: Initializers should probably be bound to
 // a reference to the object created, not the
@@ -540,6 +609,7 @@ struct Generic_expr_visitor : Expr::Visitor, lingo::Generic_visitor<F, T>
 
   void visit(Literal_expr const* e) { this->invoke(e); }
   void visit(Id_expr const* e) { this->invoke(e); }
+  void visit(Decl_expr const* e) { this->invoke(e); }
   void visit(Add_expr const* e) { this->invoke(e); }
   void visit(Sub_expr const* e) { this->invoke(e); }
   void visit(Mul_expr const* e) { this->invoke(e); }
@@ -557,7 +627,9 @@ struct Generic_expr_visitor : Expr::Visitor, lingo::Generic_visitor<F, T>
   void visit(Or_expr const* e) { this->invoke(e); }
   void visit(Not_expr const* e) { this->invoke(e); }
   void visit(Call_expr const* e) { this->invoke(e); }
-  void visit(Member_expr const* e) { this->invoke(e); }
+  void visit(Dot_expr const* e) { this->invoke(e); }
+  void visit(Field_expr const* e) { this->invoke(e); }
+  void visit(Method_expr const* e) { this->invoke(e); }
   void visit(Index_expr const* e) { this->invoke(e); }
   void visit(Value_conv const* e) { this->invoke(e); }
   void visit(Block_conv const* e) { this->invoke(e); }
@@ -589,6 +661,7 @@ struct Generic_expr_mutator : Expr::Mutator, lingo::Generic_mutator<F, T>
 
   void visit(Literal_expr* e) { this->invoke(e); }
   void visit(Id_expr* e) { this->invoke(e); }
+  void visit(Decl_expr* e) { this->invoke(e); }
   void visit(Add_expr* e) { this->invoke(e); }
   void visit(Sub_expr* e) { this->invoke(e); }
   void visit(Mul_expr* e) { this->invoke(e); }
@@ -606,7 +679,9 @@ struct Generic_expr_mutator : Expr::Mutator, lingo::Generic_mutator<F, T>
   void visit(Or_expr* e) { this->invoke(e); }
   void visit(Not_expr* e) { this->invoke(e); }
   void visit(Call_expr* e) { this->invoke(e); }
-  void visit(Member_expr* e) { this->invoke(e); }
+  void visit(Dot_expr* e) { this->invoke(e); }
+  void visit(Field_expr* e) { this->invoke(e); }
+  void visit(Method_expr* e) { this->invoke(e); }
   void visit(Index_expr* e) { this->invoke(e); }
   void visit(Value_conv* e) { this->invoke(e); }
   void visit(Block_conv* e) { this->invoke(e); }

@@ -189,6 +189,7 @@ Generator::gen(Expr const* e)
     Generator& g;
     llvm::Value* operator()(Literal_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Id_expr const* e) const { return g.gen(e); }
+    llvm::Value* operator()(Decl_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Add_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Sub_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Mul_expr const* e) const { return g.gen(e); }
@@ -206,7 +207,9 @@ Generator::gen(Expr const* e)
     llvm::Value* operator()(Or_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Not_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Call_expr const* e) const { return g.gen(e); }
-    llvm::Value* operator()(Member_expr const* e) const { return g.gen(e); }
+    llvm::Value* operator()(Dot_expr const* e) const { return g.gen(e); }
+    llvm::Value* operator()(Field_expr const* e) const { return g.gen(e); }
+    llvm::Value* operator()(Method_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Index_expr const* e) const { return g.gen(e); }
     llvm::Value* operator()(Value_conv const* e) const { return g.gen(e); }
     llvm::Value* operator()(Block_conv const* e) const { return g.gen(e); }
@@ -261,12 +264,16 @@ Generator::gen(Literal_expr const* e)
 }
 
 
-// Returns the value associated with the declaration.
-//
-// TODO: Do we need to do anything different for function
-// identifiers or not?
 llvm::Value*
 Generator::gen(Id_expr const* e)
+{
+  lingo_unreachable();
+}
+
+
+// Returns the value associated with the declaration.
+llvm::Value*
+Generator::gen(Decl_expr const* e)
 {
   auto const* bind = stack.lookup(e->declaration());
   llvm::Value* result = bind->second;
@@ -422,23 +429,15 @@ Generator::gen(Not_expr const* e)
 }
 
 
+// Note that method calls have been explicitly
+// rewritten to free function calls.
 llvm::Value*
 Generator::gen(Call_expr const* e)
 {
-  // Generate arguments first.
+  llvm::Value* fn = gen(e->target());
   std::vector<llvm::Value*> args;
   for (Expr const* a : e->arguments())
     args.push_back(gen(a));
-
-  // If this is actually a method call, then we
-  // need to adjust the arguments.
-  llvm::Value* fn;
-  if (Member_expr* mem = as<Member_expr>(e->target())) {
-    fn = gen(mem->member());
-  } else {
-    fn = gen(e->target());
-  }
-
   return build.CreateCall(fn, args);
 }
 
@@ -447,25 +446,33 @@ Generator::gen(Call_expr const* e)
 // nested member expressions into a single GEP
 // instruction. We don't have to do anything more
 // complex than this.
+//
+// FIXME: Rewrite this.
 llvm::Value*
-Generator::gen(Member_expr const* e)
+Generator::gen(Dot_expr const* e)
 {
-  llvm::Value* obj = gen(e->scope());
+  lingo_unreachable();
+}
 
-  // If the member is a method, then just generate
-  // the code to produce the object. We'll use
-  // this as the argument in a function call.
-  //
-  // FIXME: I would prefer not to do this...
-  Id_expr* mem = cast<Id_expr>(e->member());
-  if (is<Method_decl>(mem->declaration()))
-    return obj;
 
+llvm::Value*
+Generator::gen(Field_expr const* e)
+{
+  llvm::Value* obj = gen(e->container());
   std::vector<llvm::Value*> args {
-    build.getInt32(0),            // 0th element from base
-    build.getInt32(e->position()) // nth element in struct
+    build.getInt32(0),                  // 0th element from base
+    build.getInt32(e->field()->index()) // nth element in struct
   };
   return build.CreateGEP(obj, args);
+}
+
+
+// Just generate the base object. This will be used
+// as the argument for the method call.
+llvm::Value*
+Generator::gen(Method_expr const* e)
+{
+  return gen(e->container());
 }
 
 
@@ -981,8 +988,8 @@ Generator::gen(Record_decl const* d)
   types.bind(d, t);
 
   // Now, generate code for all other members.
-  for (Decl const* d : d->members())
-    gen(d);
+  for (Decl const* decl : d->members())
+    gen(decl);
 }
 
 

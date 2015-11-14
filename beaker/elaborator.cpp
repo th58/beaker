@@ -227,6 +227,7 @@ Elaborator::elaborate(Expr* e)
 
     Expr* operator()(Literal_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Id_expr* e) const { return elab.elaborate(e); }
+    Expr* operator()(Decl_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Add_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Sub_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Mul_expr* e) const { return elab.elaborate(e); }
@@ -244,7 +245,9 @@ Elaborator::elaborate(Expr* e)
     Expr* operator()(Or_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Not_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Call_expr* e) const { return elab.elaborate(e); }
-    Expr* operator()(Member_expr* e) const { return elab.elaborate(e); }
+    Expr* operator()(Dot_expr* e) const { return elab.elaborate(e); }
+    Expr* operator()(Field_expr* e) const { return elab.elaborate(e); }
+    Expr* operator()(Method_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Index_expr* e) const { return elab.elaborate(e); }
     Expr* operator()(Value_conv* e) const { return elab.elaborate(e); }
     Expr* operator()(Block_conv* e) const { return elab.elaborate(e); }
@@ -266,44 +269,43 @@ Elaborator::elaborate(Literal_expr* e)
 }
 
 
-// Elaborate an id expression. When the identifier refers
-// to an object of type T (a variable or parameter), the
-// type of the expression is T&. Otherwise, the type of the
-// expression is the type of the declaration.
+// Elaborate an id-expression that refers to a declaration
+// D. If D is an object of type T, then the type of the
+// expression is T&. If D is a function, then the type is
+// T.
 //
 // TODO: There may be some contexts in which an unresolved
 // identifier can be useful. Unfortunately, this means that
 // we have to push the handling of lookup errors up one
 // layer, unless we to precisely establish contexts where
 // such identifiers are allowed.
-//
-// TODO: If the lookup is resolved, should we actually
-// return a different kind of expression?
 Expr*
 Elaborator::elaborate(Id_expr* e)
 {
+  // Lookup the declaration for the identifier.
   Scope::Binding const* b = stack.lookup(e->symbol());
   if (!b) {
     std::stringstream ss;
     ss << "no matching declaration for '" << *e->symbol() << '\'';
     throw Lookup_error(locs.get(e), ss.str());
   }
-
-  // Annotate the expression with its declaration.
   Decl* d = b->second;
-  e->declaration(d);
 
-  // If the referenced declaration is a variable of
-  // type T, then the type is T&. Otherwise, it is
-  // just T.
-  //
-  // TODO: Why isn't a function identifier also a
-  // reference.
+  // An identifier always refers to an object, so
+  // these expressions have reference type.
   Type const* t = d->type();
-  if (defines_object(d) && !is<Reference_type>(t))
+  if (is_object(d))
     t = t->ref();
-  e->type_ = t;
 
+  // Return a new expression.
+  return new Decl_expr(t, d);
+}
+
+
+// This deoes not require elaboration.
+Expr*
+Elaborator::elaborate(Decl_expr* e)
+{
   return e;
 }
 
@@ -609,6 +611,16 @@ Elaborator::elaborate(Not_expr* e)
 
 // The target function operand is converted to
 // a value and shall have funtion type.
+//
+// If the target is a method-expr of the form
+//
+//    r.m(args)
+//
+// then rewrite the call as m(r, args).
+//
+// TODO: Allow calls of the form f(x) to resolve
+// to calls of the form x.f(). See the current
+// C++ proposals for semantics.
 Expr*
 Elaborator::elaborate(Call_expr* e)
 {
@@ -621,13 +633,30 @@ Elaborator::elaborate(Call_expr* e)
   Function_type const* t = cast<Function_type>(t1);
 
   // If the target is a member expression, then
-  // adjust the arguments to supply a first object.
+  // adjust the arguments to supply a first object
+  // and update the function pointer to the actual
+  // target.
   Expr_seq& args = e->arguments();
-  if (Member_expr* m = as<Member_expr>(f))
-    args.insert(args.begin(), m->scope());
+  if (Method_expr* m = as<Method_expr>(f)) {
+    Expr* self = m->container();
+    args.insert(args.begin(), self);
 
+    Method_decl* fn = m->method();
+    f = new Decl_expr(fn->type(), fn);
+  }
+
+  // TODO: If the function is an overload set, then
+  // we need to do overload resolution.
+
+  // Guarantee that f is an expression that refers
+  // to a declaration.
+  lingo_assert(is<Decl_expr>(f) &&
+               is<Function_decl>(cast<Decl_expr>(f)->declaration()));
 
   // Check for basic function arity.
+  //
+  // TODO: Handle default arguments and variadic
+  // functions.
   Type_seq const& parms = t->parameter_types();
   if (args.size() < parms.size())
     throw Type_error({}, "too few arguments");
@@ -652,8 +681,7 @@ Elaborator::elaborate(Call_expr* e)
     args[i] = a;
   }
 
-  // The type of the expression is that of the
-  // function return type.
+  // Update the call expression before returning.
   e->type_ = t->return_type();
   e->first = f;
   return e;
@@ -667,10 +695,12 @@ Elaborator::elaborate(Call_expr* e)
 // a member offset, kind of like an array index.
 // We don't need to annotate this expression with
 // the position.
+//
+// FIXME: Rewrite this.
 Expr*
-Elaborator::elaborate(Member_expr* e)
+Elaborator::elaborate(Dot_expr* e)
 {
-  Expr* e1 = elaborate(e->scope());
+  Expr* e1 = elaborate(e->container());
   if (!is<Reference_type>(e1->type())) {
     std::stringstream ss;
     ss << "cannot access a member of a non-object";
@@ -688,39 +718,47 @@ Elaborator::elaborate(Member_expr* e)
 
   // Re-open the class scope so we can perform lookups
   // in the usual way.
-  Record_decl* d = t->declaration();
-  Scope_sentinel scope(*this, d);
-  for (Decl* d1 : d->members())
-    stack.top().bind(d1->name(), d1);
+  //
+  // TODO: Factor this into a separate function.
+  Record_decl* rec = t->declaration();
+  Scope_sentinel scope(*this, rec);
+  for (Decl* f : rec->fields())
+    stack.top().bind(f->name(), f);
+  for (Decl* m : rec->members())
+    stack.top().bind(m->name(), m);
 
-  // Elaborate the member expression.
-  Id_expr* e2 = as<Id_expr>(elaborate(e->member()));
+  // Elaborate the member expression. This must
+  // resolve to a decl-expr.
+  //
+  // TODO: I think that this could resolve to an
+  // overload set, not a declaration.
+  Decl_expr* e2 = as<Decl_expr>(elaborate(e->member()));
   if (!e2) {
     std::stringstream ss;
     ss << "invalid member reference";
     throw Type_error({}, ss.str());
   }
+  Decl* d = e2->declaration();
 
-  // Find the offset in the class of the member.
-  // And stash it in the member expression.
-  //
-  // FIXME: If e2 refers to a method declaration,
-  // then there won't be an offset. Maybe do the
-  // general processing in a Dot_expr, and then
-  // create different kinds of expressions based
-  // on elaboration.
-  for (std::size_t i = 0; i < d->fields().size(); ++i) {
-    if (e2->declaration() == d->fields()[i]) {
-      e->pos_ = i;
-      break;
-    }
-  }
-  // assert(e->pos_ != -1);
+  // Create a specific kind of dot expression.
+  if (Field_decl* f = as<Field_decl>(d))
+    return new Field_expr(e1, e2, f);
+  if (Method_decl* m = as<Method_decl>(d))
+    return new Method_expr(e1, e2, m);
+  lingo_unreachable();
+}
 
-  // Finally set the type of the expression.
-  e->type_ = e2->type();
-  e->first = e1;
-  e->second = e2;
+
+Expr*
+Elaborator::elaborate(Field_expr* e)
+{
+  return e;
+}
+
+
+Expr*
+Elaborator::elaborate(Method_expr* e)
+{
   return e;
 }
 

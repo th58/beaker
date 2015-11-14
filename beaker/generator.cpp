@@ -660,7 +660,60 @@ Generator::gen(If_then_stmt const* s)
 void
 Generator::gen(If_else_stmt const* s)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Value*  cond = gen(s->condition());
+  if(!cond)
+    return;
+
+  cond = build.CreateFCmpONE(cond,
+			     llvm::ConstantFP::get(llvm::getGlobalContext(),
+						   llvm::APFloat(0.0)),
+			     "ifcond");
+
+  llvm::Function* then_function = build.GetInsertBlock()->getParent();
+
+  llvm::BasicBlock* then_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
+							  "then",
+							  then_function);
+
+  llvm::BasicBlock* else_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
+							  "else");
+						    
+  llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
+							   "ifcont");
+
+  build.CreateCondBr(cond, then_block, else_block);
+
+  build.SetInsertPoint(then_block);
+  
+  //true_branch() returning void???
+  llvm::Value* then_value;// = gen(s->true_branch());
+  if(!then_value)
+    return;
+
+  build.CreateBr(merge_block);
+
+  then_block = build.GetInsertBlock();
+
+  then_function->getBasicBlockList().push_back(else_block);
+  build.SetInsertPoint(else_block);
+  
+  //false_branch() returning void???
+  llvm::Value* else_value;// = gen(s->false_branch());
+  if(!else_value)
+    return;
+
+  build.CreateBr(merge_block);
+
+  else_block = build.GetInsertBlock();
+
+  then_function->getBasicBlockList().push_back(merge_block);
+  build.SetInsertPoint(merge_block);
+
+  llvm::PHINode* pn = build.CreatePHI(llvm::Type::getDoubleTy(llvm::getGlobalContext()), 2, "iftmp");
+
+  pn->addIncoming(then_value, then_block);
+  pn->addIncoming(else_value, else_block);
+  //throw std::runtime_error("not implemented");
 }
 
 

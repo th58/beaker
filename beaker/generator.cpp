@@ -737,6 +737,12 @@ Generator::gen(While_stmt const* s)
 void
 Generator::gen(Break_stmt const* s)
 {
+
+  llvm::BasicBlock* break_block = llvm::BasicBlock::Create(llvm::getGlobalContext(), "break");
+
+  build. CreateBr(break_block);
+
+  build.SetInsertPoint(break_block);
   /*
   llvm::BasicBlock::iterator mod = build.GetInsertPoint();
   

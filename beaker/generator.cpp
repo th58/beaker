@@ -685,10 +685,10 @@ Generator::gen(If_else_stmt const* s)
 
   gen(s->true_branch());
 
-  build.SetInsertPoint(block_false);
-  
   build.CreateBr(block_next);
 
+  build.SetInsertPoint(block_false);
+  
   gen(s->false_branch());
 
   build.CreateBr(block_next);
@@ -702,6 +702,34 @@ Generator::gen(If_else_stmt const* s)
 void
 Generator::gen(While_stmt const* s)
 {
+  //llvm::Function* function = build.GetInsertBlock()->getParent();
+  
+  llvm::BasicBlock* body = llvm::BasicBlock::Create(llvm::getGlobalContext(), "body");
+
+  llvm::BasicBlock* loop = llvm::BasicBlock::Create(llvm::getGlobalContext(), "loop");
+
+  llvm::BasicBlock* merge = llvm::BasicBlock::Create(llvm::getGlobalContext(), "merge");
+  
+  llvm::Value*  cond_var = gen(s->condition());
+
+  cond_var = build.CreateFCmpONE(cond_var, 
+				 llvm::ConstantFP::get(llvm::getGlobalContext(), 
+						       llvm::APFloat(0.0)), 
+				 "while_cond");
+
+
+  build.SetInsertPoint(body);
+
+  build.CreateCondBr(cond_var, loop, merge);
+
+  build.SetInsertPoint(loop);
+
+  gen(s->body());
+
+  build.CreateBr(body);
+
+  build.SetInsertPoint(merge);
+  
   //throw std::runtime_error("not implemented");
 }
 
@@ -709,15 +737,28 @@ Generator::gen(While_stmt const* s)
 void
 Generator::gen(Break_stmt const* s)
 {
+  /*
+  llvm::BasicBlock::iterator mod = build.GetInsertPoint();
   
-  throw std::runtime_error("not implemented");
+  llvm::BasicBlock::iterator temp;
+
+  for(auto x : mod)
+    temp = x;
+
+  build.CreateBr(temp);
+  */
+  //throw std::runtime_error("not implemented");
 }
 
 
 void
 Generator::gen(Continue_stmt const* s)
 {
-  throw std::runtime_error("not implemented");
+  llvm::BasicBlock* continue_block = build.GetInsertBlock();
+
+  build.CreateBr(continue_block);
+  
+  //throw std::runtime_error("not implemented");
 }
 
 

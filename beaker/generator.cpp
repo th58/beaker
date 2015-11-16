@@ -625,101 +625,76 @@ Generator::gen(Return_stmt const* s)
 void
 Generator::gen(If_then_stmt const* s)
 {
-  llvm::Value* cond_value = gen(s->condition());
-  if(!cond_value)
-    return;
+  llvm::Value* cond_var = gen(s->condition());
   
-  cond_value = build.CreateFCmpONE(cond_value,
-			     llvm::ConstantFP::get(llvm::getGlobalContext(), 
-						   llvm::APFloat(0.0)),
-			       "ifcond");
+  cond_var = build.CreateFCmpONE(cond_var, 
+				 llvm::ConstantFP::get(llvm::getGlobalContext(), 
+						 llvm::APFloat(0.0)), 
+				 "if_cond");
 
-  llvm::Function* then_function = build.GetInsertBlock()->getParent();
+  
 
-  llvm::BasicBlock* then_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
-							  "then",
-							  then_function);
-  llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
-							   "ifcont");
+  llvm::Function* function = build.GetInsertBlock()->getParent();
 
-  build.SetInsertPoint(then_block);
+  llvm::BasicBlock* block_true 
+    = llvm::BasicBlock::Create(llvm::getGlobalContext(), "true", function);
 
-  //gives error when using the body() function
-  llvm::Value* then_value;// = gen(s->body());
-  if(!then_value)
-    return;
+  llvm::BasicBlock* block_next = llvm::BasicBlock::Create(llvm::getGlobalContext(),
+							  "next");
 
-  build.CreateBr(merge_block);
+  build.CreateCondBr(cond_var, block_true, block_next);
 
-  then_block = build.GetInsertBlock();
+  build.SetInsertPoint(block_true);
 
-  then_function->getBasicBlockList().push_back(merge_block);
-  build.SetInsertPoint(merge_block);
+  gen(s->body());
 
-  llvm::PHINode* pn = build.CreatePHI(llvm::Type::getDoubleTy(llvm::getGlobalContext()), 2, "iftmp");
+  build.CreateBr(block_next);
 
-  pn->addIncoming(then_value, then_block);
+  build.SetInsertPoint(block_next);
 			      
-  //throw std::runtime_error("not implemented");
+  
 }
 
 
 void
 Generator::gen(If_else_stmt const* s)
 {
-  llvm::Value*  cond = gen(s->condition());
-  if(!cond)
-    return;
-
-  cond = build.CreateFCmpONE(cond,
-			     llvm::ConstantFP::get(llvm::getGlobalContext(),
-						   llvm::APFloat(0.0)),
-			     "ifcond");
-
-  llvm::Function* then_function = build.GetInsertBlock()->getParent();
-
-  llvm::BasicBlock* then_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
-							  "then",
-							  then_function);
-
-  llvm::BasicBlock* else_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
-							  "else");
-						    
-  llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(llvm::getGlobalContext(),
-							   "ifcont");
-
-  build.CreateCondBr(cond, then_block, else_block);
-
-  build.SetInsertPoint(then_block);
+  llvm::Value* cond_var = gen(s->condition());
   
-  //true_branch() returning void???
-  llvm::Value* then_value;// = gen(s->true_branch());
-  if(!then_value)
-    return;
+  cond_var = build.CreateFCmpONE(cond_var, 
+				 llvm::ConstantFP::get(llvm::getGlobalContext(), 
+						 llvm::APFloat(0.0)), 
+				 "if_cond");
 
-  build.CreateBr(merge_block);
-
-  then_block = build.GetInsertBlock();
-
-  then_function->getBasicBlockList().push_back(else_block);
-  build.SetInsertPoint(else_block);
   
-  //false_branch() returning void???
-  llvm::Value* else_value;// = gen(s->false_branch());
-  if(!else_value)
-    return;
 
-  build.CreateBr(merge_block);
+  llvm::Function* function = build.GetInsertBlock()->getParent();
 
-  else_block = build.GetInsertBlock();
+  llvm::BasicBlock* block_true 
+    = llvm::BasicBlock::Create(llvm::getGlobalContext(), "true", function);
+  
+  llvm::BasicBlock* block_false
+    = llvm::BasicBlock::Create(llvm::getGlobalContext(), "else");
 
-  then_function->getBasicBlockList().push_back(merge_block);
-  build.SetInsertPoint(merge_block);
+  llvm::BasicBlock* block_next = llvm::BasicBlock::Create(llvm::getGlobalContext(),
+							  "next");
 
-  llvm::PHINode* pn = build.CreatePHI(llvm::Type::getDoubleTy(llvm::getGlobalContext()), 2, "iftmp");
+  build.CreateCondBr(cond_var, block_true, block_false);
 
-  pn->addIncoming(then_value, then_block);
-  pn->addIncoming(else_value, else_block);
+  build.SetInsertPoint(block_true);
+
+  gen(s->true_branch());
+
+  build.SetInsertPoint(block_false);
+  
+  build.CreateBr(block_next);
+
+  gen(s->false_branch());
+
+  build.CreateBr(block_next);
+
+  build.SetInsertPoint(block_next);
+  
   //throw std::runtime_error("not implemented");
 }
 
@@ -727,45 +702,6 @@ Generator::gen(If_else_stmt const* s)
 void
 Generator::gen(While_stmt const* s)
 {
-  //assuning condition is going to throw and error
-  llvm::Value* start_val; // = gen(s->condition());
-  if(StartVal == 0)
-    return;
-  
-  
-  llvm::Function* loop_function = build.GetInsertBlock()->getParent();
-  
-  llvm::BasicBlock* pre_header_block = build.GetInsertBlock();
-  llvm::BasicBlock* loop_block = llvm::Create(llvm::getGlobalContext(),
-					      "loop",
-					      loop_function);
-
-  build.CreateBr(loop_block);
-
-  build.SetInsertPoint(loop_block);
-  
-  llvm::PHINode* phi_var = build.CreatePhi(Type::getDoubleTy(llvm::getGlobalContext()), 2, llvm::VarName.c_str());
-
-  phi_var->addIncoming(StartVal, pre_header_block);
-
-  llvm::Value* old_val = llvm::NamedValues[llvm::VarName];
-  llvm::NamedValues[llvm::VarName] = phi_Var;
-
-  if(!Body->codegen())
-    return;
-
-  llvm::Value* end_cond = llvm::End->codegen();
-
-  end_cond = build.CreateFCmpONE(EndCond, ConstandFP::get(llvm::getGlobalContext(), llvm::APFloat(0.0)), "loopcond");
-
-  llvm::BasicBlock* loop_end_block = build.GetInsertBlock();
-  llvm::BasicBlock* after_block = llvm::BasicBlock::Create(llvm::getGlobalContext(), "afterloop", loop_function);
-
-  build.CreateCondBr(end_cond, loop_block, after_block);
-
-  build.SetInsertPoint(after_block);
-
-					      
   //throw std::runtime_error("not implemented");
 }
 
@@ -773,6 +709,7 @@ Generator::gen(While_stmt const* s)
 void
 Generator::gen(Break_stmt const* s)
 {
+  
   throw std::runtime_error("not implemented");
 }
 
